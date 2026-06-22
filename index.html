@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Climb Program</title>
+
+<link rel="manifest" id="manifest-link" />
+<meta name="theme-color" content="#1c1a17" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Climb Plan" />
+<link rel="apple-touch-icon" id="apple-icon" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  html, body { margin:0; padding:0; background:#1c1a17; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  input, textarea { -webkit-user-select: text; user-select: text; font-family: 'JetBrains Mono', monospace; }
+  body { padding-bottom: env(safe-area-inset-bottom); padding-top: env(safe-area-inset-top); }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #8a8170; font-family: 'Archivo', sans-serif; font-size: 14px; flex-direction: column; gap: 12px;
+    background: #1c1a17; z-index: 100;
+  }
+  #error-banner {
+    display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    background: #4a2818; color: #f0c4a8; font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; padding: 16px; white-space: pre-wrap; max-height: 80vh; overflow: auto;
+    border-bottom: 2px solid #c1492f;
+  }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid #423a2f; border-top-color: #c1492f;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="error-banner"></div>
+<div id="loading"><div class="spinner"></div><div>Loading climbing plan…</div></div>
+<div id="root"></div>
+
+<script>
+window.addEventListener('error', function(e) {
+  var b = document.getElementById('error-banner');
+  b.style.display = 'block';
+  b.textContent = 'Error loading app:\n' + (e.message || e.error || 'Unknown error') +
+    (e.filename ? ('\n\nFile: ' + e.filename + ':' + e.lineno) : '');
+});
+
+(function() {
+  try {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">' +
+      '<defs>' +
+        '<linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">' +
+          '<stop offset="0%" stop-color="#c1492f"/>' +
+          '<stop offset="50%" stop-color="#8b5cc4"/>' +
+          '<stop offset="100%" stop-color="#3d6e8f"/>' +
+        '</linearGradient>' +
+      '</defs>' +
+      '<rect width="512" height="512" rx="96" fill="url(#bg)"/>' +
+      '<path d="M100 390 L205 200 L262 295 L330 165 L420 390 Z" fill="#1c1a17" opacity="0.88"/>' +
+      '<path d="M100 390 L205 200 L262 295 L330 165 L420 390 Z" fill="none" stroke="#f2ede0" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="330" cy="150" r="30" fill="#d4a72c"/>' +
+      '</svg>';
+    var svgUrl = "data:image/svg+xml;base64," + btoa(svg);
+    document.getElementById('apple-icon').setAttribute('href', svgUrl);
+
+    var manifest = {
+      name: "Climb Training Plan",
+      short_name: "Climb Plan",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#1c1a17",
+      theme_color: "#1c1a17",
+      icons: [{ src: svgUrl, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }]
+    };
+    var manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    document.getElementById('manifest-link').setAttribute('href', URL.createObjectURL(manifestBlob));
+  } catch (e) {
+    console.error('icon/manifest setup failed', e);
+  }
+})();
+</script>
+
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js"></script>
+
+<script>
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof Babel === 'undefined') {
+      var b = document.getElementById('error-banner');
+      b.style.display = 'block';
+      b.textContent = 'Could not load required scripts from the CDN (jsdelivr.net).\n' +
+        'This usually means no internet connection, or the network is blocking cdn.jsdelivr.net.\n\n' +
+        'React loaded: ' + (typeof React !== 'undefined') +
+        '\nReactDOM loaded: ' + (typeof ReactDOM !== 'undefined') +
+        '\nBabel loaded: ' + (typeof Babel !== 'undefined');
+      document.getElementById('loading').style.display = 'none';
+    }
+  }, 3000);
+});
+</script>
+
+<script type="text/babel" data-presets="react">
+try {
+  const { useState, useEffect } = React;
+
+const PHASES = [
+  { id: "base",     name: "Base Fitness",    weeks: [1,2,3],     color: "#5a9e5a", tagline: "Build the aerobic engine" },
+  { id: "strength", name: "Strength",         weeks: [4,5,6],     color: "#3d6e8f", tagline: "Max force development" },
+  { id: "power",    name: "Power",            weeks: [7,8,9],     color: "#c1492f", tagline: "Explosive recruitment" },
+  { id: "powerend", name: "Power Endurance",  weeks: [10,11],     color: "#8b5cc4", tagline: "Sustained hard movement" },
+  { id: "taper",    name: "Taper",            weeks: [12],        color: "#5c9e8f", tagline: "Bridge to outdoor season" },
+  { id: "performance", name: "Performance",   weeks: [13,14,15,16,17,18], color: "#d4a72c", tagline: "Outdoor send season — RRG / NRG" },
+];
+
+const WEEK_DATES = {
+  1:"Jun 20–26", 2:"Jun 27–Jul 3", 3:"Jul 4–10",
+  4:"Jul 11–17", 5:"Jul 18–24", 6:"Jul 25–31",
+  7:"Aug 1–7", 8:"Aug 8–14", 9:"Aug 15–21",
+  10:"Aug 22–28", 11:"Aug 29–Sep 4",
+  12:"Sep 5–11",
+  13:"Sep 12–18", 14:"Sep 19–25", 15:"Sep 26–Oct 2",
+  16:"Oct 3–9", 17:"Oct 10–16", 18:"Oct 17–23",
+};
+
+const SESSION_COLORS = {
+  ARC: "#5a9e5a", Mileage: "#5a9e5a", Optional: "#5c5650",
+  Hangboard: "#3d6e8f", "Pull/Push/Core": "#2f5570", "Limit Boulder": "#c1492f", Deload: "#5c5650",
+  "Power Interval": "#8b5cc4", "Campus/Limit": "#c1492f", "Route Power": "#6e4099",
+  Sharpening: "#8b5cc4", "Project Burns": "#6e4099", Activation: "#a07cd6",
+  "Outdoor Day": "#d4a72c", "Active Recovery": "#5a9e5a", "Maintenance": "#3d6e8f",
+};
+
+// ── REUSABLE WORKOUT LIBRARIES ──────────────────────────────────────────────
+
+const ARC_OPTIONS = [
+  {
+    name: "Classic Continuous",
+    details: [
+      "Warm-up: 15 min easy traversing",
+      "2× 20–30 min continuous climbing, never resting on the wall",
+      "Grade: 4–5 below redpoint, vertical or slight slab",
+      "10 min rest between sets",
+      "Goal: leave with a light, even pump — not torched",
+    ],
+  },
+  {
+    name: "Interval ARC",
+    details: [
+      "Warm-up: 15 min",
+      "4–6× 8–12 min on, 3 min rest",
+      "Good substitute if 20–30 min straight feels too pumpy to control",
+      "Same grade band as continuous version",
+    ],
+  },
+  {
+    name: "Angle-Mixed ARC",
+    details: [
+      "Warm-up: 15 min",
+      "1 continuous lap moving between slab → vertical → slight overhang every 5 min",
+      "20–30 min total",
+      "Trains transitions between body positions while pumped",
+    ],
+  },
+  {
+    name: "Traverse Ladder",
+    details: [
+      "Warm-up: 10 min",
+      "Pick a traversable section; climb back and forth for 15–20 min without dismounting",
+      "Add a second 15–20 min lap after 8–10 min rest",
+      "Good option when route availability is limited",
+    ],
+  },
+  {
+    name: "Outdoor ARC (multi-pitch mileage)",
+    details: [
+      "If outside: link 3–4 easy/moderate routes back to back with short transitions",
+      "Aim for total time on rock matching indoor ARC volume (40–60 min climbing time)",
+      "Use this when at the crag instead of an indoor ARC day",
+    ],
+  },
+];
+
+const HANGBOARD_OPTIONS = [
+  {
+    name: "Max Hangs — Half Crimp",
+    details: [
+      "Warm-up: 15–20 min easy climbing + 3 progressively harder warm-up hangs",
+      "6 sets × 10 sec on 20mm edge, half-crimp, 3 min rest between sets",
+      "Add weight if 10 sec feels controlled at bodyweight; remove weight if form breaks down",
+      "Log: edge size, added/removed weight, RPE per set",
+    ],
+  },
+  {
+    name: "Max Hangs — Open Hand",
+    details: [
+      "Same warm-up as half-crimp version",
+      "6 sets × 10 sec on 20mm edge, open-hand grip, 3 min rest",
+      "Open hand loads the pulleys differently — good variety, often weaker than crimp initially",
+      "Log: edge size, weight, RPE per set",
+    ],
+  },
+  {
+    name: "Repeaters (7:3)",
+    details: [
+      "Warm-up: 15–20 min",
+      "6 sets of (7 sec hang, 3 sec rest) × 6 reps = ~60 sec work per set, 3 min rest between sets",
+      "Edge: slightly larger than max hang edge (24–30mm) since it's higher volume",
+      "Builds strength-endurance in the fingers — different stimulus than max hangs",
+    ],
+  },
+  {
+    name: "Min Edge Hangs",
+    details: [
+      "Warm-up: 15–20 min",
+      "5 sets × 7–10 sec on your smallest manageable edge (often 10–15mm), 3 min rest",
+      "Bodyweight only or minimal added weight — these edges are unforgiving",
+      "Great for crimp strength specific to thin holds",
+    ],
+  },
+  {
+    name: "Two/Three Finger Drag Hangs",
+    details: [
+      "Warm-up: 15–20 min",
+      "5 sets × 8–10 sec on 20mm edge, alternating hand (2-finger then 3-finger drag), 3 min rest",
+      "Trains pocket strength — useful for limestone (RRG has plenty of pockets)",
+      "Lighter load than full-hand hangs; expect a smaller number on the scale",
+    ],
+  },
+  {
+    name: "Density Hangs (Low Intensity)",
+    details: [
+      "Warm-up: 10–15 min",
+      "4 sets × 20 sec on a comfortable edge (jug-ish, 30mm+), bodyweight, 2 min rest",
+      "Use this as the lighter of 2–3 weekly sessions, or after a hard limit boulder day",
+      "Builds tendon resilience without high peak load — good for week-to-week variety",
+    ],
+  },
+];
+
+const ACCESSORY_OPTIONS = [
+  {
+    name: "Pull Day",
+    details: [
+      "Pull-ups (various grips: wide, narrow, neutral, weighted)",
+      "Front lever progressions or tuck lever holds",
+      "Ring rows, barbell rows, or single-arm dumbbell rows",
+      "Lat pulldown",
+      "Bent-over rows / T-bar rows",
+      "Inverted rows / TRX rows",
+      "Face pulls",
+      "Bicep curls or reverse curls (light, just tendon health)",
+    ],
+  },
+  {
+    name: "Push Day",
+    details: [
+      "Push-ups (standard, incline, decline, diamond)",
+      "Dips",
+      "Bench press (barbell or dumbbell)",
+      "Overhead/shoulder press",
+      "Shoulder external rotation (band) — good for shoulder health under climbing load",
+      "Cable flys",
+      "Lateral raises",
+      "Tricep pushdowns or close-grip push-ups",
+    ],
+  },
+  {
+    name: "Core Circuit",
+    details: [
+      "Planks (standard, side, weighted)",
+      "Hanging leg raises / knee raises",
+      "Front lever raises or tuck-ups",
+      "Hollow body hold",
+      "Cable woodchoppers",
+      "Russian twists",
+      "Dead bugs",
+      "Ab wheel rollouts",
+    ],
+  },
+  {
+    name: "Antagonist / Tendon Health",
+    details: [
+      "Reverse wrist curls (light weight — protects extensor tendons)",
+      "Band pull-aparts",
+      "Wrist rotations with light dumbbell",
+      "Forearm stretches",
+    ],
+  },
+  {
+    name: "Legs / General Strength (optional)",
+    details: [
+      "Squats (back, front, goblet, split squats)",
+      "Lunges",
+      "Romanian deadlifts / single-leg RDL",
+      "Step-ups",
+      "Calf raises",
+      "Leg press",
+      "Useful if you want general fitness alongside climbing-specific work — not essential",
+    ],
+  },
+];
+
+const LIMIT_BOULDER_OPTIONS = [
+  {
+    name: "Classic Limit Bouldering",
+    details: [
+      "Warm-up: 35–40 min progressive",
+      "5–7 problems at your limit (things you can barely or can't do)",
+      "5–7 attempts per problem, full rest (4–5 min) between problems",
+      "Stop if form degrades — this is about quality movement at the edge of ability",
+    ],
+  },
+  {
+    name: "Campus Board Ladders",
+    details: [
+      "Warm-up: 35–40 min including some pulling",
+      "Ladder patterns (e.g., 1-2-3, 1-3-5) on medium-large rungs, 4 sets, 3 min rest",
+      "Technique and timing focus, not max reach — skip if elbows feel off",
+      "Good substitute or complement to limit bouldering on a given week",
+    ],
+  },
+  {
+    name: "System Board Movement",
+    details: [
+      "Warm-up: 30 min",
+      "4 sets × 4 problems on matched holds (same angle/feet), 3 min rest",
+      "Moderate-hard grade — focus on precise body positioning, not raw power",
+      "Useful lower-impact alternative when joints need a break from true limit bouldering",
+    ],
+  },
+];
+
+const POWER_INTERVAL_OPTIONS = [
+  {
+    name: "Linked Boulder Intervals",
+    details: [
+      "Warm-up: 40 min progressive",
+      "4× (3 hard-but-doable boulder problems linked, 30 sec between), 5 min rest between sets",
+      "Aim to maintain quality on problem 3, not just problem 1",
+      "Forearms ~60–70% pumped after set 1, 85–90% by set 4",
+    ],
+  },
+  {
+    name: "4×4 Bouldering",
+    details: [
+      "Warm-up: 35–40 min",
+      "4 problems in a row without rest, 4 sets total, 5 min rest between sets",
+      "Grade: 3–4 below your hardest sends, should be linkable without falling",
+      "Classic power-endurance staple — brutal by set 3–4",
+    ],
+  },
+  {
+    name: "Route Repeats",
+    details: [
+      "Warm-up: 25–30 min",
+      "3× lapping a route 1–2 grades below your hardest, 5 min rest between laps",
+      "Add a single hard move/crux variation on the final lap of each set",
+      "Builds capacity to execute technical moves while pumped",
+    ],
+  },
+  {
+    name: "Boulder Ladders (escalating)",
+    details: [
+      "Warm-up: 35 min",
+      "Climb 5 problems back to back, increasing difficulty each time (easy → hardest you can manage at the end), 6 min rest, repeat 2–3 times",
+      "Trains performing under accumulated fatigue, similar to multi-pitch or long route demands",
+    ],
+  },
+  {
+    name: "Campus Power Repeats",
+    details: [
+      "Warm-up: 35–40 min including some pulling moves",
+      "Campus board: 6 sets of explosive ladder moves (e.g. 1-3-5 or 1-4-7 on large/medium rungs), 3 min rest between sets",
+      "Done fresh (early in session) — this trains raw contact strength and explosiveness, not endurance",
+      "Skip or reduce volume if elbows/shoulders feel off — campus loading is high-stress on connective tissue",
+    ],
+  },
+  {
+    name: "Campus-to-Boulder Power Endurance",
+    details: [
+      "Warm-up: 35–40 min",
+      "3 rounds of: campus ladders (3 sets of a moderate ladder, 90 sec rest) immediately followed by 2 boulder problems near your limit with minimal rest",
+      "6–8 min rest between rounds",
+      "Trains expressing power output while already fatigued — directly relevant to redpointing cruxes deep into a route",
+      "Higher-risk session — only use once your shoulders/elbows have tolerated regular campus work without issues",
+    ],
+  },
+];
+
+// ── PROGRAM DATA ────────────────────────────────────────────────────────────
+
+const PROGRAM = {
+  1: { phase:"base", goal:"Establish rhythm. Volume > intensity.", sessions:[
+    { day:"Tuesday", type:"ARC", label:"ARC Training", duration:"90 min", options:ARC_OPTIONS },
+    { day:"Thursday", type:"ARC", label:"ARC Training", duration:"90 min", options:ARC_OPTIONS },
+    { day:"Saturday", type:"Mileage", label:"Mileage — Indoor or Outdoor", duration:"2–3 hrs",
+      details:["Flash/onsight pyramid, easy to moderate","Stay well within ability — volume not intensity","60–80 problems or 12–18 routes","Antagonist circuit: 3× (10 push-ups, 10 reverse wrist curls, 10 band pull-aparts)"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage — Indoor or Outdoor", duration:"2 hrs",
+      details:["~80% of Saturday's volume","Focus on footwork and movement quality over grade"] },
+    { day:"Mon / Wed / Fri", type:"Optional", label:"Optional: Aerobic Cross-Training", duration:"30–60 min",
+      details:["Zone 2 cardio (run, bike, hike)","Light gym work, nothing to failure","Mobility / yoga also counts"] },
+  ], notes:"Establish the routine. If tendons feel scratchy, pull back 20%. Sleep and food are training too." },
+
+  2: { phase:"base", goal:"Nudge ARC volume. Skin and tendons adapting.", sessions:[
+    { day:"Tuesday", type:"ARC", label:"ARC Training", duration:"90 min", options:ARC_OPTIONS },
+    { day:"Thursday", type:"ARC", label:"ARC Training", duration:"90 min", options:ARC_OPTIONS },
+    { day:"Saturday", type:"Mileage", label:"Mileage", duration:"2–3 hrs",
+      details:["Slightly more volume than week 1","Pick one movement drill to focus on the whole session"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs",
+      details:["Can include 1–2 moderate-effort routes near onsight level","No projecting yet"] },
+    { day:"Mon / Wed / Fri", type:"Optional", label:"Optional: Cross-Training / Gym", duration:"30–60 min",
+      details:["Zone 2 cardio or gym work","Optional: bodyweight dead hangs, open hand, very low load for tendon conditioning"] },
+  ], notes:"Skin should be toughening — file calluses before they tear. ARC volume rising but you should still feel fresh after sessions." },
+
+  3: { phase:"base", goal:"Deload base, introduce strength prep.", sessions:[
+    { day:"Tuesday", type:"ARC", label:"ARC — Reduced Volume", duration:"75 min", options:ARC_OPTIONS },
+    { day:"Thursday", type:"Hangboard", label:"Light ARC + Intro Hangs", duration:"90 min",
+      details:["1× 20 min ARC (pick any option)","Intro hangs: 4 sets × 7 sec on 20mm edge, bodyweight, 3 min rest, half-crimp","This is a preview, not a max effort — note baseline numbers for strength phase"] },
+    { day:"Saturday", type:"Mileage", label:"Mileage + Project Recon", duration:"2.5 hrs",
+      details:["Mileage warm-up, then 30–40 min touching harder moves","If outside: enjoy the day, moderate effort"] },
+    { day:"Sunday", type:"Mileage", label:"Easy Mileage", duration:"90 min", details:["Low intensity, fun climbing","Reflect on base phase progress"] },
+    { day:"Mon / Wed / Fri", type:"Optional", label:"Optional", duration:"30–60 min", details:["Light gym or mobility","Mentally prep for strength phase starting next week"] },
+  ], notes:"Deload and transition week. Strength phase starts July 11." },
+
+  4: { phase:"strength", goal:"2–3 hangboard sessions/week with variety, plus accessory work. Quality over quantity.", sessions:[
+    { day:"Tuesday", type:"Hangboard", label:"Hangboard Session A", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Pick one accessory block below to finish (pull, push, or core)." },
+    { day:"Wednesday", type:"Pull/Push/Core", label:"Limit Bouldering", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["5–7 attempts per problem if bouldering, full rest (4–5 min) between problems","Stop if form degrades"] },
+    { day:"Thursday", type:"Hangboard", label:"Hangboard Session B", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Pick a different hangboard option than Tuesday, then a different accessory block." },
+    { day:"Friday (optional)", type:"Hangboard", label:"Hangboard Session C (Optional 3rd)", duration:"60 min", options:HANGBOARD_OPTIONS, isHangboard:true, optional:true,
+      followUp:"Use the lightest option (Density Hangs) if adding a 3rd session this early." },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs",
+      details:["Moderate effort — recovery relative to Tue/Wed/Thu","If outside: onsight easy-moderate lines"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Mileage base, optional light system board","Antagonist circuit to finish"] },
+  ], notes:"First strength week. You may feel weaker than expected — normal as the stimulus shifts. Log every hangboard session: edge size, added/removed weight, RPE. Back off immediately at any finger pain." },
+
+  5: { phase:"strength", goal:"Accumulate strength stimulus — hardest week of this phase.", sessions:[
+    { day:"Tuesday", type:"Hangboard", label:"Hangboard Session A", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Try to progress load or reps slightly vs. last week's equivalent session. Pick an accessory block." },
+    { day:"Wednesday", type:"Pull/Push/Core", label:"Limit Bouldering + Campus", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["Aim for 1–2 sends on problems from last week, then 1–2 new limit problems"] },
+    { day:"Thursday", type:"Hangboard", label:"Hangboard Session B", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Use a different protocol than Tuesday for variety. Pick an accessory block." },
+    { day:"Friday (optional)", type:"Hangboard", label:"Hangboard Session C (Optional 3rd)", duration:"60 min", options:HANGBOARD_OPTIONS, isHangboard:true, optional:true },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs",
+      details:["Good week to scout fall project candidates if at RRG/NRG","Mileage effort, no redpointing yet"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Standard mileage, moderate","Antagonist + mobility to finish"] },
+  ], notes:"Peak strength volume. Sleep 8+ hrs, eat plenty. Soreness is fine; sharp/localized finger or elbow pain means stop." },
+
+  6: { phase:"strength", goal:"Final strength week — consolidate gains with one more hard push before transitioning to power.", sessions:[
+    { day:"Tuesday", type:"Hangboard", label:"Hangboard Session A", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Try a heavier load or harder protocol than previous weeks if recovery has been good. Pick an accessory block." },
+    { day:"Wednesday", type:"Pull/Push/Core", label:"Limit Bouldering + Campus", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["Push for new limit sends this week — last dedicated strength session before shifting to power"] },
+    { day:"Thursday", type:"Hangboard", label:"Hangboard Session B", duration:"75 min", options:HANGBOARD_OPTIONS, isHangboard:true,
+      followUp:"Use a protocol you haven't tried yet this phase. Pick an accessory block." },
+    { day:"Friday (optional)", type:"Hangboard", label:"Hangboard Session C (Optional 3rd)", duration:"60 min", options:HANGBOARD_OPTIONS, isHangboard:true, optional:true },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs", details:["Mileage effort, no redpointing yet","Good week for one final scouting trip before power phase"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Standard mileage, moderate","Antagonist + mobility to finish"] },
+  ], notes:"Third and final strength week. You should feel strong fingers and pulling power heading into the power phase next week." },
+
+  7: { phase:"power", goal:"Max recruitment and contact strength. Low volume, full recovery, explosive intent on every rep.", sessions:[
+    { day:"Tuesday", type:"Campus/Limit", label:"Campus Power Session", duration:"90 min", options:[POWER_INTERVAL_OPTIONS[4], POWER_INTERVAL_OPTIONS[5]],
+      details:["Warm-up: 35–40 min including pulling movement","Done fresh, early in session — this is about explosiveness, not endurance","Full rest between sets (3+ min) — quality over fatigue"] },
+    { day:"Thursday", type:"Limit Boulder", label:"Limit Bouldering", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["5–7 attempts per problem at your limit, full rest (4–5 min) between problems","Stop if form degrades — this phase is about power output, not grinding"] },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs",
+      details:["Easy-moderate mileage — recovery relative to Tue/Thu","Good week to scout fall project candidates if at RRG/NRG"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Standard mileage, moderate","Antagonist + mobility to finish"] },
+  ], notes:"First power week. Distinct from strength: shorter, more explosive efforts with full recovery, not grinding fatigue. This primes the nervous system for power endurance." },
+
+  8: { phase:"power", goal:"Second power week. Stay sharp and explosive — fatigue should not be accumulating session to session.", sessions:[
+    { day:"Tuesday", type:"Campus/Limit", label:"Campus Power Session", duration:"90 min", options:[POWER_INTERVAL_OPTIONS[4], POWER_INTERVAL_OPTIONS[5]],
+      details:["Warm-up: 35–40 min including pulling movement","Try varying ladder rung spacing or pattern from prior sessions","Full rest between sets (3+ min) — quality over fatigue"] },
+    { day:"Thursday", type:"Limit Boulder", label:"Limit Bouldering", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["Push for new limit sends — you should be feeling stronger and more explosive by this point","Full rest (4–5 min) between attempts"] },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs",
+      details:["Easy-moderate mileage — recovery relative to Tue/Thu","Good week to keep scouting fall project candidates if at RRG/NRG"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Standard mileage, moderate","Antagonist + mobility to finish"] },
+  ], notes:"Midway through power phase. One more power week after this before transitioning to power endurance." },
+
+  9: { phase:"power", goal:"Final power week. Still low volume — let each effort be sharp.", sessions:[
+    { day:"Tuesday", type:"Campus/Limit", label:"Campus Power Session", duration:"90 min", options:[POWER_INTERVAL_OPTIONS[4], POWER_INTERVAL_OPTIONS[5]],
+      details:["Warm-up: 35–40 min","Try a different ladder pattern or rung spacing than last week for variety","Full rest between sets — stop before quality drops"] },
+    { day:"Thursday", type:"Limit Boulder", label:"Limit Bouldering", duration:"2 hrs", options:LIMIT_BOULDER_OPTIONS,
+      details:["Aim for 1–2 sends on problems from last week, then 1–2 new limit problems","Full rest (4–5 min) between attempts"] },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor Mileage", duration:"2.5–3 hrs",
+      details:["Easy-moderate mileage","If at RRG/NRG: good week to keep scouting or touching project moves"] },
+    { day:"Sunday", type:"Mileage", label:"Easy Mileage / Rest", duration:"90 min or rest", details:["Easy climbing or full rest","Mentally prep for power endurance starting next week"] },
+  ], notes:"Third and final power week. You should feel explosive, not fried — if fatigue is creeping in, lean on the rest day. Power endurance starts next week." },
+
+  10: { phase:"powerend", goal:"Sustained hard movement. Mix and match options below — this phase hurts.", sessions:[
+    { day:"Tuesday", type:"Power Interval", label:"Power Endurance Session", duration:"2 hrs", options:POWER_INTERVAL_OPTIONS },
+    { day:"Thursday", type:"Route Power", label:"Power Endurance Session", duration:"2 hrs", options:POWER_INTERVAL_OPTIONS },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor — Hard Route Work", duration:"3 hrs",
+      details:["If at RRG/NRG: work hard routes/projects at your limit grade","Warm up 45 min, then 3–4 hard redpoint-style burns","Note what breaks down when pumped — informs weeks 9–10","Mileage to finish"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Easy mileage after Saturday intensity","Footwork and rest-position focus"] },
+    { day:"Mon / Wed / Fri", type:"Optional", label:"Optional", duration:"30–45 min",
+      details:["Light gym or mobility only","Skin care critical now — tape flappers immediately, file calluses nightly"] },
+  ], notes:"Welcome to power endurance. The pump is the point. Breathe, move efficiently, suffer productively." },
+
+  11: { phase:"powerend", goal:"Build lactic tolerance and link capacity — pick varied stimuli through the week.", sessions:[
+    { day:"Tuesday", type:"Power Interval", label:"Power Endurance Session", duration:"2 hrs", options:POWER_INTERVAL_OPTIONS },
+    { day:"Thursday", type:"Route Power", label:"Power Endurance Session", duration:"2 hrs", options:POWER_INTERVAL_OPTIONS },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor — Hard Route Work", duration:"3+ hrs",
+      details:["Warm up 45 min, same ritual each time","4–5 hard burns, 15–20 min rest between attempts","Observe: do you fail at the crux or just after it when pumped?"] },
+    { day:"Sunday", type:"Mileage", label:"Mileage", duration:"2 hrs", details:["Moderate mileage, active recovery","Note any physical niggles before the taper week"] },
+    { day:"Mon / Wed / Fri", type:"Optional", label:"Optional", duration:"30–45 min", details:["Gym / mobility","Keep skin in good shape"] },
+  ], notes:"Hardest power endurance week. Trust the discomfort — this is exactly the stimulus your body needs for fall send season." },
+
+  12: { phase:"taper", goal:"Taper week. Reduce volume, keep some sharpness — this is the bridge straight into outdoor performance.", sessions:[
+    { day:"Tuesday", type:"Power Interval", label:"Power Endurance — Reduced Volume", duration:"90 min",
+      details:["Pick any option above, but drop 1 set/round from your usual volume","Focus on efficiency and breathing under pump — intentional taper"] },
+    { day:"Thursday", type:"Project Burns", label:"Crux Linking / Activation", duration:"90 min",
+      details:["Pick 2 hard crux sequences from routes/problems near your limit","Link each with a move above and below, 3× each, 5 min rest","Keep it sharp, not exhausting — short and high quality"] },
+    { day:"Saturday", type:"Mileage", label:"Indoor/Outdoor — Hard Route Burns", duration:"3 hrs", details:["Redpoint-style attempts, full rest between (15–20 min)","3–4 attempts max — leave energy in the tank","If outside, treat it like your first real send attempt of the season"] },
+    { day:"Sunday", type:"Mileage", label:"Easy Mileage", duration:"90 min", details:["Easy, fun climbing","Mentally prepare for outdoor performance weekends starting next week"] },
+  ], notes:"Final training week. Volume drops, intensity stays sharp. Trust the work — outdoor performance season starts next week." },
+
+  13: { phase:"performance", goal:"Outdoor send season begins. Weekdays stay light — the work happens at the crag on weekends.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest, easy walk, or light stretching/mobility","Let the weekend's climbing fully absorb before doing anything else"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min",
+      details:["Easy climbing only, well below limit — just keep movement fresh","Or: light hangboard (Density Hangs option), low stress","Or: skip entirely if forearms/skin need recovery from the weekend","This is about staying primed, not building fitness — that work is done"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min",
+      details:["Short easy ARC-style session (10–15 min continuous) if you want to feel a slight pump before the weekend","Totally optional — skip if you feel good without it","Do NOT do anything hard this close to a send weekend"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","Warm up the same way each time — consistency matters now","Climb with intention: redpoint burns on routes near your limit, full rest between attempts","Mileage / easy climbing afterward if you have gas left"] },
+  ], notes:"First outdoor weekend of the cycle. Don't overdo the in-between days — your fitness is built, this phase is about applying it and recovering well between weekends." },
+
+  14: { phase:"performance", goal:"Continue outdoor sends. Keep weekday volume low — protect recovery for the next weekend.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest or light mobility","Note any tweaks/niggles from the weekend before they become bigger problems"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min",
+      details:["Easy climbing, well below limit","Or light hangboard (Density Hangs / Repeaters at reduced load)","Keep this genuinely light — the goal is staying loose, not training"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min", details:["Short easy ARC session if desired","Skip if skin or fingers need more recovery"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","Revisit anything close from last weekend with fresh attempts","Same warm-up ritual as always"] },
+  ], notes:"Pay attention to skin and tendon recovery between weekends — two hard outdoor days back to back across the month adds up." },
+
+  15: { phase:"performance", goal:"Mid-cycle outdoor weekend. Check in on fatigue and adjust if needed.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest or light mobility","Honest check-in: are you fresh enough for another hard weekend, or do you need an easier one?"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min",
+      details:["Easy climbing or light hangboard as in prior weeks","Consider a slightly easier week here if fatigue is building — better to arrive fresh than to grind"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min", details:["Short easy session if desired, otherwise rest"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","If fatigued, prioritize one quality attempt over many mediocre ones","Weather/temps should be excellent by now at RRG/NRG"] },
+  ], notes:"Three weekends in — listen to your body. A slightly lighter week here (if needed) will pay off for weeks 17 and beyond." },
+
+  16: { phase:"performance", goal:"Midway through the outdoor block. Keep the recovery rhythm dialed in — two more weekends to go.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest or light mobility"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min", details:["Easy climbing or light hangboard, your choice","Keep it light — same logic as prior weeks"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min", details:["Short easy session if desired, otherwise rest"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","Mid-October temps at RRG/NRG are often some of the best of the season","Keep using the same consistent warm-up ritual"] },
+  ], notes:"Four weekends down, two to go. If fatigue has been building, this is a good week to scale back the in-between sessions even further." },
+
+  17: { phase:"performance", goal:"Late-season outdoor weekend. Watch for shorter days and cooler temps — adjust timing accordingly.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest or light mobility","Check in on overall fatigue — six weekends of hard outdoor days adds up by now"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min", details:["Easy climbing or light hangboard, your choice","Lean toward the lighter end if you're feeling worn down"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min", details:["Short easy session if desired, otherwise rest"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","Days are shorter now — plan arrival/warm-up time accordingly","Cooler temps can mean great friction; layer up between burns"] },
+  ], notes:"One more weekend after this. Fall foliage season at RRG/NRG — also makes for a nice weekend if friends/partners want to join." },
+
+  18: { phase:"performance", goal:"Final scheduled outdoor weekend of this cycle. Beyond this, keep climbing as conditions and schedule allow.", sessions:[
+    { day:"Monday", type:"Active Recovery", label:"Recovery", duration:"30–45 min", details:["Rest or light mobility"] },
+    { day:"Tue / Wed", type:"Maintenance", label:"Light Touch Session (pick 1 day)", duration:"45–60 min", details:["Easy climbing or light hangboard, your choice","Keep it light — same logic as prior weeks"] },
+    { day:"Thursday", type:"Maintenance", label:"Optional Light Pump", duration:"45 min", details:["Short easy session if desired, otherwise rest"] },
+    { day:"Saturday–Sunday", type:"Outdoor Day", label:"Outdoor Climbing Weekend", duration:"Full weekend", isOutdoorDay: true,
+      details:["Log crag, routes/problems, and conditions below","Final planned weekend of this cycle — also a good time to reflect on what worked across the whole season","After this, consider whether to repeat a shortened cycle or keep riding current fitness into November"] },
+  ], notes:"End of the formal plan. Fall temps at RRG/NRG can still be solid into November — many climbers just keep weekend trips going from here with this same light-week / hard-weekend rhythm." },
+};
+
+const WARMUPS = [
+  {
+    name: "Indoor Warm-Up",
+    color: "#3d6e8f",
+    steps: [
+      { title: "General pulse raise (5 min)", items: ["Light cardio: jog in place, jumping jacks, or arm circles", "Goal: get blood flowing, not get tired"] },
+      { title: "Joint prep (5 min)", items: ["Shoulder circles and arm swings, 10 each direction", "Wrist circles and finger extensions/flexions, 15 each", "Hip circles and leg swings, 10 each side"] },
+      { title: "Easy climbing (10–15 min)", items: ["5–8 very easy problems or 2–3 easy routes, well below your level", "Focus on full range of motion, not effort", "Include some easy dynamic movement and big reaches"] },
+      { title: "Progressive climbing (10–15 min)", items: ["Gradually increase difficulty every 2–3 problems/routes", "By the end you should be at moderate effort, ~60–70% of session-day intensity", "Include a few moves resembling today's session style (crimpy, powerful, enduro, etc.)"] },
+      { title: "Final activation (5 min)", items: ["1–2 problems/moves at close to session intensity", "This primes the nervous system right before the main session", "Take a short rest (3–5 min) before starting the actual workout"] },
+    ],
+  },
+  {
+    name: "Outdoor Warm-Up",
+    color: "#a8763e",
+    steps: [
+      { title: "Before you climb (10 min)", items: ["Light hike/walk to the crag counts as part of this", "Dynamic stretches: leg swings, arm circles, walking lunges", "If you have resistance bands: band pull-aparts, face pulls, shoulder external rotations — great for waking up shoulders pre-climb", "If you have a portable hangboard: 2–3 light hangs, bodyweight, big edge"] },
+      { title: "Easy mileage (20–30 min)", items: ["Climb 2–4 routes well below your grade", "If limited routes are available, lap the same easy route a few times", "Use this time to read rock, settle into the rhythm of the day"] },
+      { title: "Progressive burns (15–20 min)", items: ["1–2 routes a couple grades below your target effort for the day", "Focus on movement quality and reading sequences", "This is also a good time to scope out any harder lines for the day"] },
+      { title: "Rest before hard effort (10–15 min)", items: ["Let forearms fully recover before your first hard burn or project attempt", "Hydrate, snack, reapply tape as needed", "Optional: a light band pull-apart set or two if shoulders feel tight, nothing fatiguing", "Mental check-in: visualize movement, not outcome"] },
+    ],
+  },
+];
+
+const phaseForWeek = (w) => PHASES.find((p) => p.weeks.includes(w));
+
+// Persisted via localStorage so progress survives closing the app
+function useStoredState(key, initial) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : initial;
+    } catch (e) {
+      return initial;
+    }
+  });
+  const setAndStore = (updater) => {
+    setState((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try { window.localStorage.setItem(key, JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  };
+  return [state, setAndStore];
+}
+
+function ClimbingProgram() {
+  const [selectedWeek, setSelectedWeek] = useStoredState("climb_selectedWeek", 1);
+  const [completedSessions, setCompletedSessions] = useStoredState("climb_completedSessions", {});
+  const [expandedSession, setExpandedSession] = useState(null);
+  const [selectedOption, setSelectedOption] = useStoredState("climb_selectedOption", {});
+  const [hangLog, setHangLog] = useStoredState("climb_hangLog", {});
+  const [sessionNotes, setSessionNotes] = useStoredState("climb_sessionNotes", {});
+  const [outdoorLog, setOutdoorLog] = useStoredState("climb_outdoorLog", {});
+  const [showLogFor, setShowLogFor] = useState(null);
+  const [showWarmups, setShowWarmups] = useState(false);
+
+  const week = PROGRAM[selectedWeek];
+  const phase = phaseForWeek(selectedWeek);
+
+  const toggleSession = (weekNum, sessionIdx) => {
+    const key = `${weekNum}-${sessionIdx}`;
+    setCompletedSessions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleExpand = (idx) => setExpandedSession(expandedSession === idx ? null : idx);
+
+  const pickOption = (idx, optName) => {
+    setSelectedOption((prev) => ({ ...prev, [`${selectedWeek}-${idx}`]: optName }));
+  };
+
+  const updateLog = (idx, field, value) => {
+    const key = `${selectedWeek}-${idx}`;
+    setHangLog((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+
+  const updateSessionNote = (idx, value) => {
+    const key = `${selectedWeek}-${idx}`;
+    setSessionNotes((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateOutdoorLog = (idx, field, value) => {
+    const key = `${selectedWeek}-${idx}`;
+    setOutdoorLog((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+
+  const weekProgress = (week.sessions || []).filter((_, i) => completedSessions[`${selectedWeek}-${i}`]).length;
+  const totalSessions = week.sessions.length;
+
+  // Build hangboard progress history across all weeks for display
+  const hangboardHistory = [];
+  Object.keys(PROGRAM).forEach((wk) => {
+    PROGRAM[wk].sessions.forEach((s, idx) => {
+      if (s.isHangboard) {
+        const key = `${wk}-${idx}`;
+        const log = hangLog[key];
+        const opt = selectedOption[key];
+        if (log && (log.edge || log.weight || log.rpe)) {
+          hangboardHistory.push({ week: wk, day: s.day, option: opt || "—", ...log });
+        }
+      }
+    });
+  });
+
+  // Build outdoor day log history across all weeks for display
+  const outdoorHistory = [];
+  Object.keys(PROGRAM).forEach((wk) => {
+    PROGRAM[wk].sessions.forEach((s, idx) => {
+      if (s.isOutdoorDay) {
+        const key = `${wk}-${idx}`;
+        const log = outdoorLog[key];
+        if (log && (log.crag || log.routes || log.conditions)) {
+          outdoorHistory.push({ week: wk, ...log });
+        }
+      }
+    });
+  });
+
+  return (
+    <div style={{ fontFamily: "'Archivo', 'Archivo Narrow', sans-serif", background: `radial-gradient(ellipse 1200px 800px at 50% -10%, ${phase.color}22, transparent), #1c1a17`, minHeight: "100vh", color: "#e8e2d4", transition: "background 0.4s" }}>
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", opacity: 0.05, backgroundImage: "radial-gradient(circle at 20% 30%, #e8e2d4 0.5px, transparent 0.5px), radial-gradient(circle at 70% 60%, #e8e2d4 0.5px, transparent 0.5px), radial-gradient(circle at 45% 85%, #e8e2d4 0.5px, transparent 0.5px)", backgroundSize: "180px 180px, 220px 220px, 160px 160px" }} />
+      <div style={{ borderBottom: `1px solid ${phase.color}33`, padding: "20px 20px 0", background: `linear-gradient(180deg, ${phase.color}14, transparent)` }}>
+        <div style={{ maxWidth: 760, margin: "0 auto" }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "#5c5648", marginBottom: 5 }}>
+            Sport Climbing · 18-Week Periodization
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 }}>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: "-0.01em", color: "#f2ede0", fontFamily: "'Archivo Narrow', sans-serif", textTransform: "uppercase" }}>Jun 20 → Oct 23</h1>
+            <div style={{ fontSize: 12, color: "#5c5648", textAlign: "right" }}>
+              <div>RRG / NRG</div>
+              <div>Sept–Oct Send Season</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {PHASES.map((p) => (
+              <div key={p.id} onClick={() => setSelectedWeek(p.weeks[0])}
+                style={{ flex: 1, minWidth: 0, padding: "10px 4px 12px", cursor: "pointer",
+                  borderBottom: phase.id === p.id ? `3px solid ${p.color}` : "3px solid transparent",
+                  background: phase.id === p.id ? p.color + "18" : "transparent",
+                  borderRadius: phase.id === p.id ? "4px 4px 0 0" : 0,
+                  opacity: phase.id === p.id ? 1 : 0.45, transition: "all 0.2s" }}>
+                <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: phase.id === p.id ? p.color : "#5c5648", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontWeight: phase.id === p.id ? 700 : 400 }}>
+                  Wk {p.weeks[0]}–{p.weeks[p.weeks.length - 1]}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: phase.id === p.id ? "#f2ede0" : "#ddd6c6", lineHeight: 1.3, wordBreak: "break-word" }}>{p.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "20px" }}>
+        <button onClick={() => setShowWarmups(!showWarmups)}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+            background: "#251f18", border: "1px solid #423a2f", borderRadius: 8,
+            padding: "12px 16px", marginBottom: showWarmups ? 0 : 20, cursor: "pointer", color: "#a99f89",
+          }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Warm-Up Routines (Indoor &amp; Outdoor)</span>
+          <span style={{ fontSize: 10, transform: showWarmups ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+        </button>
+
+        {showWarmups && (
+          <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+            {WARMUPS.map((wu) => (
+              <div key={wu.name} style={{ background: "#211e19", border: `1px solid ${wu.color}33`, borderLeft: `3px solid ${wu.color}`, borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: wu.color, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {wu.name}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {wu.steps.map((step, si) => (
+                    <div key={si}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#bab19c", marginBottom: 4 }}>{step.title}</div>
+                      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                        {step.items.map((it, ii) => (
+                          <li key={ii} style={{ fontSize: 11.5, color: "#7a7261", lineHeight: 1.7, display: "flex", gap: 8 }}>
+                            <span style={{ color: wu.color + "80", flexShrink: 0 }}>—</span>{it}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ background: "#251f18", border: `1px solid ${phase.color}28`, borderLeft: `3px solid ${phase.color}`, borderRadius: 8, padding: "14px 18px", marginBottom: 20 }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: phase.color, marginBottom: 5 }}>
+            {phase.name} · {phase.tagline}
+          </div>
+          <p style={{ margin: 0, fontSize: 13, color: "#8a8170", lineHeight: 1.6 }}>{week.goal}</p>
+        </div>
+
+        <div style={{ display: "flex", gap: 7, marginBottom: 22, flexWrap: "wrap" }}>
+          {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => {
+            const wp = phaseForWeek(w);
+            const ws = PROGRAM[w]?.sessions || [];
+            const wc = ws.filter((_, i) => completedSessions[`${w}-${i}`]).length;
+            const isDone = wc === ws.length && ws.length > 0;
+            const isSelected = selectedWeek === w;
+            return (
+              <button key={w} onClick={() => setSelectedWeek(w)} title={`Week ${w}: ${WEEK_DATES[w]}`}
+                style={{ width: 38, height: 44, borderRadius: "4px 4px 10px 10px",
+                  border: isSelected ? `2px solid ${wp.color}` : `1px solid #423a2f`,
+                  borderTop: isSelected ? `4px solid ${wp.color}` : `4px solid ${wp.color}55`,
+                  background: isSelected ? wp.color + "30" : isDone ? wp.color + "22" : "#1f1c17",
+                  boxShadow: isSelected ? `0 0 14px ${wp.color}55, inset 0 0 8px ${wp.color}22` : "none",
+                  color: isSelected ? "#f2ede0" : "#6b6354",
+                  fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                  cursor: "pointer", position: "relative", transition: "all 0.15s", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {String(w).padStart(2, "0")}
+                {isDone && <span style={{ position: "absolute", top: -2, right: -2, fontSize: 8, color: wp.color, background: "#1c1a17", borderRadius: "50%", width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", marginBottom: 3 }}>
+              Week {selectedWeek} · {WEEK_DATES[selectedWeek]}
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "#f2ede0" }}>{weekProgress}/{totalSessions} sessions</div>
+          </div>
+          <div style={{ width: 72, height: 3, background: "#3a3128", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${(weekProgress / totalSessions) * 100}%`, background: phase.color, transition: "width 0.3s", borderRadius: 2 }} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          {week.sessions.map((session, idx) => {
+            const key = `${selectedWeek}-${idx}`;
+            const done = !!completedSessions[key];
+            const expanded = expandedSession === idx;
+            const tagColor = SESSION_COLORS[session.type] || "#5c5648";
+            const isOptional = session.type === "Optional" || session.optional;
+            const chosenOpt = selectedOption[key];
+            const chosenDetails = session.options
+              ? (session.options.find((o) => o.name === chosenOpt) || session.options[0])
+              : null;
+            const log = hangLog[key] || {};
+
+            return (
+              <div key={idx} style={{
+                background: done ? "#211e19" : "#251f18",
+                border: `1px solid ${done ? phase.color + "44" : "#3a3128"}`,
+                borderRadius: 9, overflow: "hidden", opacity: isOptional ? 0.8 : 1, transition: "border-color 0.2s",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "13px 16px", cursor: "pointer", gap: 12 }} onClick={() => toggleExpand(idx)}>
+                  <button onClick={(e) => { e.stopPropagation(); toggleSession(selectedWeek, idx); }}
+                    style={{ width: 28, height: 28, borderRadius: "50%",
+                      border: `2px solid ${done ? phase.color : "#4d4336"}`,
+                      background: done ? phase.color : "transparent",
+                      color: done ? "#000" : "transparent", fontSize: 12, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", flexShrink: 0 }}>✓</button>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: done ? "#5c5648" : "#ddd6c6" }}>{session.day}</span>
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: tagColor + "20", color: tagColor, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                        {session.label}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#4d4738" }}>{session.duration}{chosenOpt ? ` · ${chosenOpt}` : ""}</div>
+                  </div>
+                  <div style={{ color: "#333", fontSize: 10, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▼</div>
+                </div>
+
+                {expanded && (
+                  <div style={{ borderTop: "1px solid #332c23", padding: "12px 16px" }}>
+                    {/* Multiple-option sessions: show selector chips */}
+                    {session.options && (
+                      <>
+                        <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", marginBottom: 8 }}>
+                          Choose a variant
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                          {session.options.map((opt) => (
+                            <button key={opt.name} onClick={() => pickOption(idx, opt.name)}
+                              style={{
+                                fontSize: 11, padding: "5px 10px", borderRadius: 6,
+                                border: `1px solid ${chosenOpt === opt.name || (!chosenOpt && opt === session.options[0]) ? tagColor : "#4d4336"}`,
+                                background: chosenOpt === opt.name || (!chosenOpt && opt === session.options[0]) ? tagColor + "22" : "transparent",
+                                color: chosenOpt === opt.name || (!chosenOpt && opt === session.options[0]) ? tagColor : "#7a7261",
+                                cursor: "pointer",
+                              }}>
+                              {opt.name}
+                            </button>
+                          ))}
+                        </div>
+                        <ul style={{ margin: "0 0 12px 0", padding: 0, listStyle: "none" }}>
+                          {chosenDetails.details.map((d, di) => (
+                            <li key={di} style={{ fontSize: 12, color: "#7a7261", lineHeight: 1.75, display: "flex", gap: 10 }}>
+                              <span style={{ color: tagColor + "70", flexShrink: 0 }}>—</span>{d}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+
+                    {/* Static detail sessions — only when there's no variant picker, to avoid showing both */}
+                    {session.details && !session.options && (
+                      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                        {session.details.map((d, di) => (
+                          <li key={di} style={{ fontSize: 12, color: done ? "#423d31" : "#7a7261", lineHeight: 1.75, display: "flex", gap: 10, textDecoration: done ? "line-through" : "none" }}>
+                            <span style={{ color: phase.color + "70", flexShrink: 0 }}>—</span>{d}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {session.followUp && (
+                      <div style={{ fontSize: 11, color: "#5c5648", fontStyle: "italic", marginTop: 4, marginBottom: session.isHangboard ? 12 : 0 }}>
+                        Then: {session.followUp}
+                      </div>
+                    )}
+
+                    {/* Accessory picker for hangboard sessions */}
+                    {session.isHangboard && (
+                      <>
+                        <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", margin: "12px 0 8px" }}>
+                          Accessory block options
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                          {ACCESSORY_OPTIONS.map((acc) => (
+                            <details key={acc.name} style={{ background: "#191713", border: "1px solid #3a3128", borderRadius: 6, padding: "8px 12px" }}>
+                              <summary style={{ fontSize: 12, fontWeight: 600, color: "#988e78", cursor: "pointer" }}>{acc.name}</summary>
+                              <ul style={{ margin: "8px 0 0 0", padding: 0, listStyle: "none" }}>
+                                {acc.details.map((d, di) => (
+                                  <li key={di} style={{ fontSize: 11.5, color: "#6b6354", lineHeight: 1.7, display: "flex", gap: 8 }}>
+                                    <span style={{ color: "#423d31", flexShrink: 0 }}>—</span>{d}
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          ))}
+                        </div>
+
+                        {/* Progress log */}
+                        <div style={{ borderTop: "1px solid #332c23", paddingTop: 12 }}>
+                          <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", marginBottom: 8 }}>
+                            Log this session
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>Edge (mm)</label>
+                              <input type="text" value={log.edge || ""} onChange={(e) => updateLog(idx, "edge", e.target.value)}
+                                placeholder="20"
+                                style={{ width: "100%", background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "6px 8px", boxSizing: "border-box" }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>Added/Removed Wt (lb)</label>
+                              <input type="text" value={log.weight || ""} onChange={(e) => updateLog(idx, "weight", e.target.value)}
+                                placeholder="+10 or -5"
+                                style={{ width: "100%", background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "6px 8px", boxSizing: "border-box" }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>RPE (1–10)</label>
+                              <input type="text" value={log.rpe || ""} onChange={(e) => updateLog(idx, "rpe", e.target.value)}
+                                placeholder="8"
+                                style={{ width: "100%", background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "6px 8px", boxSizing: "border-box" }} />
+                            </div>
+                          </div>
+                          <textarea value={log.note || ""} onChange={(e) => updateLog(idx, "note", e.target.value)}
+                            placeholder="Notes (grip felt, accessory work done, etc.)"
+                            style={{ width: "100%", minHeight: 50, background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "8px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+                        </div>
+                      </>
+                    )}
+                    {/* Outdoor day crag/route logging */}
+                    {session.isOutdoorDay && (
+                      <div style={{ borderTop: "1px solid #332c23", paddingTop: 12, marginTop: session.details ? 0 : 4 }}>
+                        <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", marginBottom: 8 }}>
+                          Log this outdoor day
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
+                          <div>
+                            <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>Crag(s)</label>
+                            <input type="text" value={(outdoorLog[`${selectedWeek}-${idx}`] || {}).crag || ""}
+                              onChange={(e) => updateOutdoorLog(idx, "crag", e.target.value)}
+                              placeholder="e.g. Red River Gorge — Roadside, Muir Valley"
+                              style={{ width: "100%", background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "6px 8px", boxSizing: "border-box" }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>Routes / Problems</label>
+                            <textarea value={(outdoorLog[`${selectedWeek}-${idx}`] || {}).routes || ""}
+                              onChange={(e) => updateOutdoorLog(idx, "routes", e.target.value)}
+                              placeholder="e.g. Roadside Attraction 12a - sent; Table of Colors 12b - worked, 1 hang at crux"
+                              style={{ width: "100%", minHeight: 60, background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "8px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 10, color: "#5c5648", display: "block", marginBottom: 4 }}>Conditions</label>
+                            <input type="text" value={(outdoorLog[`${selectedWeek}-${idx}`] || {}).conditions || ""}
+                              onChange={(e) => updateOutdoorLog(idx, "conditions", e.target.value)}
+                              placeholder="e.g. 58°F, dry, light breeze — great friction"
+                              style={{ width: "100%", background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "6px 8px", boxSizing: "border-box" }} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* General notes field on every session */}
+                    <div style={{ borderTop: "1px solid #332c23", paddingTop: 12, marginTop: 12 }}>
+                      <div style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4d4738", marginBottom: 8 }}>
+                        Session notes
+                      </div>
+                      <textarea value={sessionNotes[`${selectedWeek}-${idx}`] || ""}
+                        onChange={(e) => updateSessionNote(idx, e.target.value)}
+                        placeholder="How did it feel? Anything to remember for next time?"
+                        style={{ width: "100%", minHeight: 50, background: "#15130f", border: "1px solid #4d4336", borderRadius: 5, color: "#ddd6c6", fontSize: 12, padding: "8px", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Hangboard progress history */}
+        {hangboardHistory.length > 0 && (
+          <div style={{ background: "#1f1c17", border: "1px solid #3a3128", borderRadius: 8, padding: "14px 16px", marginBottom: 20 }}>
+            <div style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#423d31", marginBottom: 10 }}>
+              Hangboard Progress Log
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {hangboardHistory.map((h, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, fontSize: 11.5, color: "#7a7261", borderBottom: i < hangboardHistory.length - 1 ? "1px solid #332c23" : "none", paddingBottom: 6 }}>
+                  <span style={{ color: "#3d6e8f", fontWeight: 700, minWidth: 50, fontFamily: "'JetBrains Mono', monospace" }}>WK {String(h.week).padStart(2,"0")}</span>
+                  <span style={{ minWidth: 70, color: "#5c5648" }}>{h.day}</span>
+                  <span style={{ flex: 1, color: "#8a8170" }}>{h.option}</span>
+                  <span style={{ color: "#6b6354" }}>{h.edge ? `${h.edge}mm` : ""}</span>
+                  <span style={{ color: "#6b6354" }}>{h.weight || ""}</span>
+                  <span style={{ color: "#6b6354" }}>{h.rpe ? `RPE ${h.rpe}` : ""}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Outdoor day log history */}
+        {outdoorHistory.length > 0 && (
+          <div style={{ background: "#1f1c17", border: "1px solid #3a3128", borderRadius: 8, padding: "14px 16px", marginBottom: 20 }}>
+            <div style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#423d31", marginBottom: 10 }}>
+              Outdoor Day Log
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {outdoorHistory.map((h, i) => (
+                <div key={i} style={{ borderBottom: i < outdoorHistory.length - 1 ? "1px solid #332c23" : "none", paddingBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 10, fontSize: 11.5, marginBottom: 4 }}>
+                    <span style={{ color: "#d4a72c", fontWeight: 700, minWidth: 50, fontFamily: "'JetBrains Mono', monospace" }}>WK {String(h.week).padStart(2,"0")}</span>
+                    <span style={{ color: "#988e78", flex: 1 }}>{h.crag || "—"}</span>
+                    <span style={{ color: "#6b6354" }}>{h.conditions || ""}</span>
+                  </div>
+                  {h.routes && (
+                    <div style={{ fontSize: 11.5, color: "#7a7261", lineHeight: 1.6, paddingLeft: 60, whiteSpace: "pre-wrap" }}>{h.routes}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ background: "#1f1c17", border: "1px solid #3a3128", borderRadius: 8, padding: "13px 16px", marginBottom: 28 }}>
+          <div style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#423d31", marginBottom: 7 }}>Coach Note</div>
+          <p style={{ margin: 0, fontSize: 12, color: "#5c5648", lineHeight: 1.75, fontStyle: "italic" }}>{week.notes}</p>
+        </div>
+
+        <div style={{ borderTop: "1px solid #332c23", paddingTop: 22 }}>
+          <div style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "#423d31", marginBottom: 14 }}>Full Timeline</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {PHASES.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 3, height: 36, background: p.color, borderRadius: 2, flexShrink: 0, opacity: phase.id === p.id ? 1 : 0.3 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: phase.id === p.id ? "#ddd6c6" : "#4d4738" }}>{p.name}</span>
+                    <span style={{ fontSize: 10, color: "#423d31" }}>
+                      {WEEK_DATES[p.weeks[0]].split("–")[0].trim()} – {WEEK_DATES[p.weeks[p.weeks.length-1]].split("–")[1]?.trim() || ""}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: phase.id === p.id ? p.color : "#333" }}>{p.tagline}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<ClimbingProgram />);
+  document.getElementById('loading').style.display = 'none';
+} catch (err) {
+  var b = document.getElementById('error-banner');
+  b.style.display = 'block';
+  b.textContent = 'App error: ' + err.message + '\n\n' + (err.stack || '');
+  document.getElementById('loading').style.display = 'none';
+  console.error(err);
+}
+</script>
+</body>
+</html>
